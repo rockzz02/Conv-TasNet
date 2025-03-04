@@ -2,8 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+import matplotlib.pyplot as plt
 
-from .utility import models, sdr
+from utility import models, sdr
 
 
 # Conv-TasNet
@@ -80,13 +81,40 @@ class TasNet(nn.Module):
         
         return output
 
-def test_conv_tasnet():
-    x = torch.rand(2, 32000)
-    nnet = TasNet()
-    x = nnet(x)
-    s1 = x[0]
-    print(s1.shape)
 
+def test_conv_tasnet():
+    x1 = torch.rand(2, 32000)
+    
+    nnet = TasNet()
+    
+    x = nnet(x1)
+    
+    s1 = x[0].detach()
+    s2 = x[1].detach()
+
+    print(s1.shape)
+    print(s2.shape)
+    print(s1+s2 == x1.detach())
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+    im0 = axes[0].imshow(x1.numpy(), aspect='auto')
+    axes[0].set_title('Input x1')
+    axes[0].set_xlim(0, 10)
+    fig.colorbar(im0, ax=axes[0])
+
+    im1 = axes[1].imshow(s1.numpy(), aspect='auto')
+    axes[1].set_title('Output x[0] (Speaker 1)')
+    axes[1].set_xlim(0, 10)
+    fig.colorbar(im1, ax=axes[1])
+
+    im2 = axes[2].imshow(s2.numpy(), aspect='auto')
+    axes[2].set_title('Output x[1] (Speaker 2)')
+    axes[2].set_xlim(0, 10)
+    fig.colorbar(im2, ax=axes[2])
+
+    plt.tight_layout()
+    plt.show()
 
 if __name__ == "__main__":
     test_conv_tasnet()
