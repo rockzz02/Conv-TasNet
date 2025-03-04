@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import matplotlib.pyplot as plt
+from torchviz import make_dot
 
 from utility import models, sdr
 
@@ -67,12 +68,12 @@ class TasNet(nn.Module):
         
     def forward(self, input):
         
-        print(input.shape)
+        # print(input.shape)
         # padding
         output, rest = self.pad_signal(input)
         batch_size = output.size(0)
-        print(output.shape)
-        print(rest)
+        # print(output.shape)
+        # print(rest)
         
         # waveform encoder
         enc_output = self.encoder(output)  # B, N, L
@@ -91,33 +92,37 @@ class TasNet(nn.Module):
 
 
 def test_conv_tasnet():
-    x1 = torch.rand(2, 32000)
+    x = torch.rand(2, 32000)
     
     nnet = TasNet()
     
-    x = nnet(x1)
+    y = nnet(x)
     
-    s1 = x[0].detach()
-    s2 = x[1].detach()
+    s1 = y[0].detach()
+    s2 = y[1].detach()
 
     print(s1.shape)
     print(s2.shape)
-    print(s1+s2 == x1.detach())
+    print(s1+s2 == x.detach())
+
+    dot = make_dot(y, params=dict(nnet.named_parameters()), show_attrs=False, show_saved=False)
+    dot.format = 'png'
+    dot.render('TasNet_architecture1')
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
-    im0 = axes[0].imshow(x1.numpy(), aspect='auto')
-    axes[0].set_title('Input x1')
+    im0 = axes[0].imshow(x.numpy(), aspect='auto')
+    axes[0].set_title('Input x')
     axes[0].set_xlim(0, 10)
     fig.colorbar(im0, ax=axes[0])
 
     im1 = axes[1].imshow(s1.numpy(), aspect='auto')
-    axes[1].set_title('Output x[0] (Speaker 1)')
+    axes[1].set_title('Output y[0] (Speaker 1)')
     axes[1].set_xlim(0, 10)
     fig.colorbar(im1, ax=axes[1])
 
     im2 = axes[2].imshow(s2.numpy(), aspect='auto')
-    axes[2].set_title('Output x[1] (Speaker 2)')
+    axes[2].set_title('Output y[1] (Speaker 2)')
     axes[2].set_xlim(0, 10)
     fig.colorbar(im2, ax=axes[2])
 
@@ -126,3 +131,15 @@ def test_conv_tasnet():
 
 if __name__ == "__main__":
     test_conv_tasnet()
+
+
+
+"""
+1. Input -> Padding -> Encoder (self.encoder)
+2. Encoder Output -> cLN (self.cLN)
+3. cLN Output -> TCN (self.TCN)
+4. TCN Output -> FCLayer (self.fc_layer)
+5. FCLayer Output -> Mask Generation -> Masked Output
+6. Masked Output -> Decoder (self.decoder)
+7. Decoder Output -> Final Output
+"""

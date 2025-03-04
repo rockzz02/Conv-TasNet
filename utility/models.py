@@ -5,21 +5,29 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
+# cLN (Cumulative Layer Normalization)
 class cLN(nn.Module):
     def __init__(self, dimension, eps = 1e-8, trainable=True):
         super(cLN, self).__init__()
         
         self.eps = eps
         if trainable:
-            self.gain = nn.Parameter(torch.ones(1, dimension, 1))
-            self.bias = nn.Parameter(torch.zeros(1, dimension, 1))
+            self.gain = nn.Parameter(torch.ones(1, dimension, 1)) # Will be updated during backprop
+            self.bias = nn.Parameter(torch.zeros(1, dimension, 1)) 
         else:
-            self.gain = Variable(torch.ones(1, dimension, 1), requires_grad=False)
+            self.gain = Variable(torch.ones(1, dimension, 1), requires_grad=False) # Won't be updated during backprop because of requires_grad=False
             self.bias = Variable(torch.zeros(1, dimension, 1), requires_grad=False)
+        '''
+            1. **nn.Parameter**: Parameters that will be optimized during training
+            2. **Variable with requires_grad=False**: Fixed values that won't be updated during training
+            3. Even with **requires_grad=True**, it won't show up in model.parameters() unless it's an **nn.Parameter**
+               This means regular Variables/Tensors with gradients won't automatically be included in optimizers
+        '''
 
     def forward(self, input):
         # input size: (Batch, Freq, Time)
         # cumulative mean for each time step
+        # Unlike standard layer normalization which normalizes across all elements, cLN performs normalization cumulatively over the time dimension.
         
         batch_size = input.size(0)
         channel = input.size(1)
@@ -47,6 +55,7 @@ class cLN(nn.Module):
 def repackage_hidden(h):
     """
     Wraps hidden states in new Variables, to detach them from their history.
+    When PyTorch processes sequential data through an RNN, it builds a computational graph that tracks all operations for backpropagation. For very long sequences, this graph can grow extremely large, causing memory issues and computational inefficiency. The repackage_hidden function breaks this chain by creating new Variable objects that contain the same data but are disconnected from previous computations.
     """
 
     if type(h) == Variable:
@@ -129,6 +138,17 @@ class FCLayer(nn.Module):
               
     def init_hidden(self):
         initrange = 1. / np.sqrt(self.input_size * self.hidden_size)
+        """
+        This line implements Xavier/Glorot initialization, which:
+
+        1. Sets initial weights to optimal values to prevent vanishing or exploding gradients
+        2. Scales weights relative to the layer dimensions to maintain stable signal flow
+        3. Makes training converge faster and more reliably
+        4. Ensures better gradient flow in deep networks
+
+        The formula creates a range proportional to the inverse square root of the number of connections, which statistically keeps the variance of activations consistent across layers. This is a proven best practice for initializing neural network weights before training begins.
+        """
+
         self.FC.weight.data.uniform_(-initrange, initrange)
         if self.bias:
             self.FC.bias.data.fill_(0)
@@ -151,10 +171,10 @@ class DepthConv1d(nn.Module):
           groups=hidden_channel,
           padding=self.padding)
         self.res_out = nn.Conv1d(hidden_channel, input_channel, 1)
-        self.nonlinearity1 = nn.PReLU()
+        self.nonlinearity1 = nn.PReLU()     # Parametric Rectified Linear Unit
         self.nonlinearity2 = nn.PReLU()
         if self.causal:
-            self.reg1 = cLN(hidden_channel, eps=1e-08)
+            self.reg1 = cLN(hidden_channel, eps=1e-08)      # hidden_channel typically refers to the number of channels in the hidden layers of a CNN
             self.reg2 = cLN(hidden_channel, eps=1e-08)
         else:
             self.reg1 = nn.GroupNorm(1, hidden_channel, eps=1e-08)
@@ -211,7 +231,7 @@ class TCN(nn.Module):
                     else:
                         self.receptive_field += (kernel - 1)
                     
-        #print("Receptive field: {:3d} frames.".format(self.receptive_field))
+        print("Receptive field: {:3d} frames.".format(self.receptive_field))
         
         # output layer
         

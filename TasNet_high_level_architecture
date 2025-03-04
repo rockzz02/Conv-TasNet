@@ -1,0 +1,24 @@
+// TasNet High-Level Architecture
+digraph {
+	A [label=Input]
+	B [label=Padding]
+	C [label="Encoder (self.encoder)"]
+	D [label="cLN (self.cLN)"]
+	E [label="TCN (self.TCN)"]
+	F [label="DepthConv1d (within TCN)"]
+	G [label="FCLayer (self.fc_layer)"]
+	H [label="Mask Generation"]
+	I [label="Masked Output"]
+	J [label="Decoder (self.decoder)"]
+	K [label="Final Output"]
+	A -> B
+	B -> C
+	C -> D
+	D -> E
+	E -> F
+	F -> G
+	G -> H
+	H -> I
+	I -> J
+	J -> K
+}
