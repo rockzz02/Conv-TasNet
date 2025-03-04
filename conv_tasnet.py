@@ -32,6 +32,7 @@ class TasNet(nn.Module):
         self.encoder = nn.Conv1d(1, self.enc_dim, self.win, bias=False, stride=self.stride)
         
         # TCN separator
+        # Temporal Convolutional Network (TCN)
         self.TCN = models.TCN(self.enc_dim, self.enc_dim*self.num_spk, self.feature_dim, self.feature_dim*4,
                               self.layer, self.stack, self.kernel, causal=self.causal)
 
@@ -39,11 +40,14 @@ class TasNet(nn.Module):
         
         # output decoder
         self.decoder = nn.ConvTranspose1d(self.enc_dim, 1, self.win, bias=False, stride=self.stride)
+        # nn.ConvTranspose1d is a powerful tool in PyTorch for tasks that require upsampling and reconstruction of 1-dimensional data, making it an essential component in various neural network architectures for audio and signal processing.
+
 
     def pad_signal(self, input):
 
         # input is the waveforms: (B, T) or (B, 1, T)
         # reshape and padding
+        # print(input.dim())
         if input.dim() not in [2, 3]:
             raise RuntimeError("Input can only be 2 or 3 dimensional.")
         
@@ -63,13 +67,17 @@ class TasNet(nn.Module):
         
     def forward(self, input):
         
+        print(input.shape)
         # padding
         output, rest = self.pad_signal(input)
         batch_size = output.size(0)
+        print(output.shape)
+        print(rest)
         
         # waveform encoder
         enc_output = self.encoder(output)  # B, N, L
-
+        # B=Batch Size, N=Number of Channels, L=Length of Signal, C=Number of Speakers
+        
         # generate masks
         masks = torch.sigmoid(self.TCN(enc_output)).view(batch_size, self.num_spk, self.enc_dim, -1)  # B, C, N, L
         masked_output = enc_output.unsqueeze(1) * masks  # B, C, N, L
