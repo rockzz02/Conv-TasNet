@@ -1,12 +1,36 @@
 import torch
 import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
 import torch.nn.functional as F
 from torch.autograd import Variable
 import matplotlib.pyplot as plt
 from torchviz import make_dot
+import numpy as np
+import random
+import soundfile as sf
 
 from utility import models, sdr
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+sample_rate = 0
+
+def load_wav_to_tensor(file_path):
+    waveform, sample_rate = sf.read(file_path)
+    waveform = torch.tensor(waveform).unsqueeze(0)
+    waveform = waveform.to(torch.float32)
+    return waveform, sample_rate
+
+def save_tensor_to_wav(tensor, file_path, sample_rate=sample_rate):
+    tensor = tensor.squeeze(0).numpy()
+    sf.write(file_path, tensor, sample_rate)
+
+def pad_waveform(waveform, target_length):
+    current_length = waveform.shape[1]
+    if current_length < target_length:
+        padding = target_length - current_length
+        waveform = F.pad(waveform, (0, padding), "constant", 0)
+    return waveform
 
 # Conv-TasNet
 class TasNet(nn.Module):
@@ -90,47 +114,161 @@ class TasNet(nn.Module):
         
         return output
 
+def si_snr_loss(source, estimate_source, eps=1e-8):
+    """ Calculate SI-SNRi loss """
+    def l2_norm(s):
+        return torch.sqrt(torch.sum(s ** 2, dim=-1, keepdim=True) + eps)
 
-def test_conv_tasnet():
-    x = torch.rand(2, 32000)
-    
-    nnet = TasNet()
-    
-    y = nnet(x)
-    
-    s1 = y[0].detach()
-    s2 = y[1].detach()
+    # Zero-mean norm
+    source = source - torch.mean(source, dim=-1, keepdim=True)
+    estimate_source = estimate_source - torch.mean(estimate_source, dim=-1, keepdim=True)
 
-    print(s1.shape)
-    print(s2.shape)
-    print(s1+s2 == x.detach())
+    # SI-SNR
+    s_target = torch.sum(source * estimate_source, dim=-1, keepdim=True) * source / l2_norm(source)
+    e_noise = estimate_source - s_target
+    si_snr = 20 * torch.log10(l2_norm(s_target) / (l2_norm(e_noise) + eps))
+    return -torch.mean(si_snr)
 
-    dot = make_dot(y, params=dict(nnet.named_parameters()), show_attrs=False, show_saved=False)
-    dot.format = 'png'
-    dot.render('TasNet_architecture1')
+def train_conv_tasnet(model, train_loader, optimizer, num_epochs=10):
+    model.train()
+    for epoch in range(num_epochs):
+        running_loss = 0.0
+        for i, data in enumerate(train_loader, 0):
+            inputs, targets = data
+            inputs, targets = inputs.to(device), targets.to(device)
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = si_snr_loss(targets, outputs)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+            if i % 10 == 9:  # print every 10 mini-batches
+                print(f"[{epoch + 1}, {i + 1}] loss: {running_loss / 10:.3f}")
+                running_loss = 0.0
+        
+        # print(f"Epoch [{epoch + 1}/{num_epochs}], Loss: {running_loss:.4f}")
+    print("Finished Training")
+
+def set_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+def test_conv_tasnet(model, test_loader):
+    model.eval()
+    total_loss = 0.0
+    with torch.no_grad():
+        for i, data in enumerate(test_loader, 0):
+            inputs, targets = data
+            inputs, targets = inputs.to(device), targets.to(device)
+            outputs = model(inputs)
+            loss = si_snr_loss(targets, outputs)
+            total_loss += loss.item()
+            print(f"Batch {i + 1}, Loss: {loss.item():.4f}")
+
+    avg_loss = total_loss / len(test_loader)
+    print(f"Average Loss: {avg_loss:.4f}")
+
+    inputs, targets = next(iter(test_loader))
+    inputs, targets = inputs.to(device), targets.to(device)
+    outputs = model(inputs)
+    # print(outputs.shape)
+    s1, s2 = torch.unbind(outputs, dim=1)
+    s1 = s1.detach().cpu().numpy()
+    s2 = s2.detach().cpu().numpy()
+    x = inputs[0].detach().cpu().numpy()
+
+    # Reshape the data for visualization
+    s1 = s1.reshape(1, -1)
+    s2 = s2.reshape(1, -1)
+    x = x.reshape(1, -1)
+    # save_tensor_to_wav(torch.tensor(s1), 'output1.wav')
+    # save_tensor_to_wav(torch.tensor(s2), 'output2.wav')
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
-    im0 = axes[0].imshow(x.numpy(), aspect='auto')
+    im0 = axes[0].imshow(x, aspect='auto')
     axes[0].set_title('Input x')
-    axes[0].set_xlim(0, 10)
+    axes[0].set_xlim(0, 20)
     fig.colorbar(im0, ax=axes[0])
 
-    im1 = axes[1].imshow(s1.numpy(), aspect='auto')
+    im1 = axes[1].imshow(s1, aspect='auto')
     axes[1].set_title('Output y[0] (Speaker 1)')
-    axes[1].set_xlim(0, 10)
+    axes[1].set_xlim(0, 20)
     fig.colorbar(im1, ax=axes[1])
 
-    im2 = axes[2].imshow(s2.numpy(), aspect='auto')
+    im2 = axes[2].imshow(s2, aspect='auto')
     axes[2].set_title('Output y[1] (Speaker 2)')
-    axes[2].set_xlim(0, 10)
+    axes[2].set_xlim(0, 20)
     fig.colorbar(im2, ax=axes[2])
 
     plt.tight_layout()
     plt.show()
 
+def main():
+    set_seed(2)
+    x_list = [torch.rand(1, 32000) for _ in range(100)]
+    set_seed(3)
+    y_list = [torch.rand(2, 32000) for _ in range(100)]
+
+    # Stack the list into tensors
+    x = torch.stack(x_list)
+    y = torch.stack(y_list)
+
+    # Create a DataLoader
+    dataset = TensorDataset(x, y)
+    train_loader = DataLoader(dataset, batch_size=2, shuffle=True)
+
+    # # Initialize the model and optimizer
+    model = TasNet().to(device)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+    # Train the model
+    train_conv_tasnet(model, train_loader, optimizer, num_epochs=10)
+
+    # Save the model
+    torch.save(model.state_dict(), "tasnet_model.pth")
+
+
+    set_seed(4)
+    x_list = [torch.rand(1, 32000) for _ in range(10)]
+    set_seed(5)
+    y_list = [torch.rand(2, 32000) for _ in range(10)]
+
+    # global sample_rate
+    # wf1, sr1 = load_wav_to_tensor('male-male-mixture.wav')
+    # wf2, sr2 = load_wav_to_tensor('male-male-dpcl1.wav')
+    # wf3, sr3 = load_wav_to_tensor('male-male-dpcl2.wav')
+    # sample_rate = sr3
+
+    # print(wf1.shape)
+    # print(wf2.shape)
+    # print(wf3.shape)
+    
+    # max_length = max(wf1.shape[1], wf2.shape[1], wf3.shape[1])
+    # wf1 = pad_waveform(wf1, max_length)
+    # wf2 = pad_waveform(wf2, max_length)
+    # wf3 = pad_waveform(wf3, max_length)
+
+    # x_list = [wf1]
+    # y_list = [torch.cat((wf2, wf3), dim=0)]
+
+    # Stack the list into tensors
+    x = torch.stack(x_list)
+    y = torch.stack(y_list)
+
+    # Create a DataLoader
+    dataset = TensorDataset(x, y)
+    test_loader = DataLoader(dataset, batch_size=2, shuffle=True)
+
+    # Test the model
+    test_conv_tasnet(model, test_loader)
+
 if __name__ == "__main__":
-    test_conv_tasnet()
+    main()
 
 
 
