@@ -3,3 +3,4 @@ __pycache__/
 audio_and_tensor.py
 *.wav
 *.mp3
+*.pth
