@@ -13,7 +13,6 @@ import soundfile as sf
 from utility import models, sdr
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-sample_rate = 0
 
 def load_wav_to_tensor(file_path):
     waveform, sample_rate = sf.read(file_path)
@@ -21,7 +20,7 @@ def load_wav_to_tensor(file_path):
     waveform = waveform.to(torch.float32)
     return waveform, sample_rate
 
-def save_tensor_to_wav(tensor, file_path, sample_rate=sample_rate):
+def save_tensor_to_wav(tensor, file_path, sample_rate):
     tensor = tensor.squeeze(0).numpy()
     sf.write(file_path, tensor, sample_rate)
 
@@ -157,7 +156,7 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def test_conv_tasnet(model, test_loader):
+def test_conv_tasnet(model, test_loader, sr):
     model.eval()
     total_loss = 0.0
     with torch.no_grad():
@@ -176,85 +175,76 @@ def test_conv_tasnet(model, test_loader):
     inputs, targets = inputs.to(device), targets.to(device)
     outputs = model(inputs)
     # print(outputs.shape)
-    s1, s2 = torch.unbind(outputs, dim=1)
-    s1 = s1.detach().cpu().numpy()
-    s2 = s2.detach().cpu().numpy()
+    outputs = torch.unbind(outputs, dim=1)
+    outputs = [i.detach().cpu().numpy().reshape(1, -1) for i in outputs]
     x = inputs[0].detach().cpu().numpy()
 
-    # Reshape the data for visualization
-    s1 = s1.reshape(1, -1)
-    s2 = s2.reshape(1, -1)
+    fig, axes = plt.subplots(len(outputs)+1, 1, figsize=(15, 8))
     x = x.reshape(1, -1)
-    # save_tensor_to_wav(torch.tensor(s1), 'output1.wav')
-    # save_tensor_to_wav(torch.tensor(s2), 'output2.wav')
+    save_tensor_to_wav(torch.tensor(x), 'input.wav', sr)
+    axes[0].plot(x[0])
+    axes[0].set_title('Input Mixture Waveform')
+    axes[0].set_xlim(0, len(x[0]))
+    axes[0].set_ylabel('Amplitude')
+    
+    for i, s in enumerate(outputs):
+        save_tensor_to_wav(torch.tensor(s), f'output{i+1}.wav', sr)
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-
-    im0 = axes[0].imshow(x, aspect='auto')
-    axes[0].set_title('Input x')
-    axes[0].set_xlim(0, 20)
-    fig.colorbar(im0, ax=axes[0])
-
-    im1 = axes[1].imshow(s1, aspect='auto')
-    axes[1].set_title('Output y[0] (Speaker 1)')
-    axes[1].set_xlim(0, 20)
-    fig.colorbar(im1, ax=axes[1])
-
-    im2 = axes[2].imshow(s2, aspect='auto')
-    axes[2].set_title('Output y[1] (Speaker 2)')
-    axes[2].set_xlim(0, 20)
-    fig.colorbar(im2, ax=axes[2])
-
+        axes[i+1].plot(s[0])
+        axes[i+1].set_title(f'Output Speaker {i+1} Waveform')
+        axes[i+1].set_xlim(0, len(s[0]))
+        axes[i+1].set_ylabel('Amplitude')
+    
+    axes[len(outputs)].set_xlabel('Samples')
+    
     plt.tight_layout()
     plt.show()
 
 def main():
-    set_seed(2)
-    x_list = [torch.rand(1, 32000) for _ in range(100)]
-    set_seed(3)
-    y_list = [torch.rand(2, 32000) for _ in range(100)]
+    # set_seed(2)
+    # x_list = [torch.rand(1, 32000) for _ in range(100)]
+    # set_seed(3)
+    # y_list = [torch.rand(2, 32000) for _ in range(100)]
 
     # Stack the list into tensors
-    x = torch.stack(x_list)
-    y = torch.stack(y_list)
+    # x = torch.stack(x_list)
+    # y = torch.stack(y_list)
 
     # Create a DataLoader
-    dataset = TensorDataset(x, y)
-    train_loader = DataLoader(dataset, batch_size=2, shuffle=True)
+    # dataset = TensorDataset(x, y)
+    # train_loader = DataLoader(dataset, batch_size=2, shuffle=True)
 
     # # Initialize the model and optimizer
     model = TasNet().to(device)
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    # optimizer = optim.Adam(model.parameters(), lr=0.001)
 
     # Train the model
-    train_conv_tasnet(model, train_loader, optimizer, num_epochs=10)
+    # train_conv_tasnet(model, train_loader, optimizer, num_epochs=10)
 
     # Save the model
-    torch.save(model.state_dict(), "tasnet_model.pth")
+    # torch.save(model.state_dict(), "tasnet_model.pth")
 
 
-    set_seed(4)
-    x_list = [torch.rand(1, 32000) for _ in range(10)]
-    set_seed(5)
-    y_list = [torch.rand(2, 32000) for _ in range(10)]
+    # set_seed(4)
+    # x_list = [torch.rand(1, 32000) for _ in range(10)]
+    # set_seed(5)
+    # y_list = [torch.rand(2, 32000) for _ in range(10)]
 
-    # global sample_rate
-    # wf1, sr1 = load_wav_to_tensor('male-male-mixture.wav')
-    # wf2, sr2 = load_wav_to_tensor('male-male-dpcl1.wav')
-    # wf3, sr3 = load_wav_to_tensor('male-male-dpcl2.wav')
-    # sample_rate = sr3
+    wf1, sr1 = load_wav_to_tensor('male-male-mixture.wav')
+    wf2, sr2 = load_wav_to_tensor('male-male-dpcl1.wav')
+    wf3, sr3 = load_wav_to_tensor('male-male-dpcl2.wav')
 
     # print(wf1.shape)
     # print(wf2.shape)
     # print(wf3.shape)
     
-    # max_length = max(wf1.shape[1], wf2.shape[1], wf3.shape[1])
-    # wf1 = pad_waveform(wf1, max_length)
-    # wf2 = pad_waveform(wf2, max_length)
-    # wf3 = pad_waveform(wf3, max_length)
+    max_length = max(wf1.shape[1], wf2.shape[1], wf3.shape[1])
+    wf1 = pad_waveform(wf1, max_length)
+    wf2 = pad_waveform(wf2, max_length)
+    wf3 = pad_waveform(wf3, max_length)
 
-    # x_list = [wf1]
-    # y_list = [torch.cat((wf2, wf3), dim=0)]
+    x_list = [wf1]
+    y_list = [torch.cat((wf2, wf3), dim=0)]
 
     # Stack the list into tensors
     x = torch.stack(x_list)
@@ -265,7 +255,7 @@ def main():
     test_loader = DataLoader(dataset, batch_size=2, shuffle=True)
 
     # Test the model
-    test_conv_tasnet(model, test_loader)
+    test_conv_tasnet(model, test_loader, sr3)
 
 if __name__ == "__main__":
     main()
