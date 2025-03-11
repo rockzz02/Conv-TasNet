@@ -4,3 +4,4 @@ audio_and_tensor.py
 *.wav
 *.mp3
 *.pth
+audios/
