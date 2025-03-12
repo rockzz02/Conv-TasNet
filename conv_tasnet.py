@@ -2,33 +2,13 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
-import torch.nn.functional as F
 from torch.autograd import Variable
 import matplotlib.pyplot as plt
-import numpy as np
-import random
-import soundfile as sf
 
 from utility import models, sdr
+from utils import load_wav_to_tensor, save_tensor_to_wav, pad_waveform, set_seed, si_snr_loss
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-def load_wav_to_tensor(file_path):
-    waveform, sample_rate = sf.read(file_path)
-    waveform = torch.tensor(waveform).unsqueeze(0)
-    waveform = waveform.to(torch.float32)
-    return waveform, sample_rate
-
-def save_tensor_to_wav(tensor, file_path, sample_rate):
-    tensor = tensor.squeeze(0).numpy()
-    sf.write(file_path, tensor, sample_rate)
-
-def pad_waveform(waveform, target_length):
-    current_length = waveform.shape[1]
-    if current_length < target_length:
-        padding = target_length - current_length
-        waveform = F.pad(waveform, (0, padding), "constant", 0)
-    return waveform
 
 # Conv-TasNet
 class TasNet(nn.Module):
@@ -112,29 +92,6 @@ class TasNet(nn.Module):
         
         return output
 
-def si_snr_loss(source, estimate_source, eps=1e-8):
-    """ Calculate SI-SNRi loss """
-    def l2_norm(s):
-        return torch.sqrt(torch.sum(s ** 2, dim=-1, keepdim=True) + eps)
-
-    # Zero-mean norm
-    source = source - torch.mean(source, dim=-1, keepdim=True)
-    estimate_source = estimate_source - torch.mean(estimate_source, dim=-1, keepdim=True)
-
-    # SI-SNR
-    s_target = torch.sum(source * estimate_source, dim=-1, keepdim=True) * source / l2_norm(source)
-    e_noise = estimate_source - s_target
-    si_snr = 20 * torch.log10(l2_norm(s_target) / (l2_norm(e_noise) + eps))
-    return -torch.mean(si_snr)
-
-def set_seed(seed):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
 def train_conv_tasnet(model, train_loader, optimizer, num_epochs=10):
     model.train()
     for epoch in range(num_epochs):
@@ -201,9 +158,9 @@ def test_conv_tasnet(model, test_loader, sr):
 
 def main():
     set_seed(2)
-    x_list = [torch.rand(1, 32000) for _ in range(100)]
+    x_list = [torch.rand(1, 32000) for _ in range(200)]
     set_seed(3)
-    y_list = [torch.rand(2, 32000) for _ in range(100)]
+    y_list = [torch.rand(2, 32000) for _ in range(200)]
 
     # Stack the list into tensors
     x = torch.stack(x_list)

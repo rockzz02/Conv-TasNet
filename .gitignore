@@ -1,5 +1,6 @@
 test.py
 __pycache__/
+utility/__pycache__/
 audio_and_tensor.py
 *.wav
 *.mp3
