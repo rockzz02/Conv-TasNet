@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -157,27 +158,40 @@ def test_conv_tasnet(model, test_loader, sr):
     plt.show()
 
 def main():
-    set_seed(2)
-    x_list = [torch.rand(1, 32000) for _ in range(200)]
-    set_seed(3)
-    y_list = [torch.rand(2, 32000) for _ in range(200)]
+    # set_seed(2)
+    # x_tr_list = [torch.rand(1, 32000) for _ in range(200)]
+    # set_seed(3)
+    # y_tr_list = [torch.rand(2, 32000) for _ in range(200)]
 
-    # Stack the list into tensors
-    x = torch.stack(x_list)
-    y = torch.stack(y_list)
+    files_in = os.listdir("audios/train_dir/mixed_audios")
+    files_in = [i for i in files_in if i.find('.wav') != -1]
+    x_tr_list = [load_wav_to_tensor(f'audios/train_dir/mixed_audios/{i}')[0] for i in files_in]
+    max_length = max([i.shape[1] for i in x_tr_list])
+    max_length = max(max_length, max([load_wav_to_tensor(f'audios/train_dir/clean_audios/{i}')[0].shape[1] for i in os.listdir("audios/train_dir/clean_audios") if i.find('.wav') != -1]))
+    x_tr_list = [pad_waveform(i, max_length) for i in x_tr_list]
+    
+    y_tr_list = []
+    for file in files_in:
+        files_out = file.split('.')[0].split('_')
+        files_out = [f'audios/train_dir/clean_audios/{i}.wav' for i in files_out]
+        sep_y = [load_wav_to_tensor(i)[0] for i in files_out]
+        sep_y = [pad_waveform(i, max_length) for i in sep_y]
+        # print(sep_y[0].shape)
+        # print(sep_y[1].shape)
+        sep_y = torch.cat(sep_y, dim=0)
+        y_tr_list.append(sep_y)
 
-    # Create a DataLoader
-    dataset = TensorDataset(x, y)
+    x_tr = torch.stack(x_tr_list)
+    y_tr = torch.stack(y_tr_list)
+
+    dataset = TensorDataset(x_tr, y_tr)
     train_loader = DataLoader(dataset, batch_size=2, shuffle=True)
 
-    # Initialize the model and optimizer
     model = TasNet().to(device)
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-    # Train the model
     train_conv_tasnet(model, train_loader, optimizer, num_epochs=10)
 
-    # Save the model
     torch.save(model.state_dict(), "tasnet_model.pth")
 
 
@@ -194,18 +208,15 @@ def main():
     wf2 = pad_waveform(wf2, max_length)
     wf3 = pad_waveform(wf3, max_length)
 
-    x_list = [wf1]
-    y_list = [torch.cat((wf2, wf3), dim=0)]
+    x_ts_list = [wf1]
+    y_ts_list = [torch.cat((wf2, wf3), dim=0)]
 
-    # Stack the list into tensors
-    x = torch.stack(x_list)
-    y = torch.stack(y_list)
+    x_ts = torch.stack(x_ts_list)
+    y_ts = torch.stack(y_ts_list)
 
-    # Create a DataLoader
-    dataset = TensorDataset(x, y)
+    dataset = TensorDataset(x_ts, y_ts)
     test_loader = DataLoader(dataset, batch_size=2, shuffle=True)
 
-    # Test the model
     test_conv_tasnet(model, test_loader, sr3)
 
 if __name__ == "__main__":
