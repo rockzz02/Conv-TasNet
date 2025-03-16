@@ -6,7 +6,7 @@ import noisereduce as nr
 import soundfile as sf
 
 # Load the audio file
-input_file = "output/source_0.wav"
+input_file = "audios/output1.wav"
 y, sr = librosa.load(input_file, sr=None)
 
 # Apply a high-pass filter to remove DC noise
@@ -33,7 +33,7 @@ filtered_signal = low_pass_filter(dc_removed_signal, cutoff_freq=3000, sr=sr)
 reduced_noise = nr.reduce_noise(y=filtered_signal, sr=sr, prop_decrease=0.8)
 
 # Save the cleaned audio
-output_file = "cleaned_audio.wav"
+output_file = "audios/cleaned_output1.wav"
 sf.write(output_file, reduced_noise, sr)
 
 print(f"Filtered audio saved as {output_file}")

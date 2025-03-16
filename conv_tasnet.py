@@ -7,7 +7,7 @@ from torch.autograd import Variable
 import matplotlib.pyplot as plt
 
 from utility import models, sdr
-from utils import load_wav_to_tensor, save_tensor_to_wav, pad_waveform, set_seed, si_snr_loss
+from utils import load_wav_to_tensor, save_tensor_to_wav, adjust_length, set_seed, si_snr_loss
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -166,16 +166,18 @@ def main():
     files_in = os.listdir("audios/train_dir/mixed_audios")
     files_in = [i for i in files_in if i.find('.wav') != -1]
     x_tr_list = [load_wav_to_tensor(f'audios/train_dir/mixed_audios/{i}')[0] for i in files_in]
-    max_length = max([i.shape[1] for i in x_tr_list])
-    max_length = max(max_length, max([load_wav_to_tensor(f'audios/train_dir/clean_audios/{i}')[0].shape[1] for i in os.listdir("audios/train_dir/clean_audios") if i.find('.wav') != -1]))
-    x_tr_list = [pad_waveform(i, max_length) for i in x_tr_list]
+    # max_length = max([i.shape[1] for i in x_tr_list])
+    # max_length = max(max_length, max([load_wav_to_tensor(f'audios/train_dir/clean_audios/{i}')[0].shape[1] for i in os.listdir("audios/train_dir/clean_audios") if i.find('.wav') != -1]))
+
+    max_length = 60000
+    x_tr_list = [adjust_length(i, max_length) for i in x_tr_list]
     
     y_tr_list = []
     for file in files_in:
         files_out = file.split('.')[0].split('_')
         files_out = [f'audios/train_dir/clean_audios/{i}.wav' for i in files_out]
         sep_y = [load_wav_to_tensor(i)[0] for i in files_out]
-        sep_y = [pad_waveform(i, max_length) for i in sep_y]
+        sep_y = [adjust_length(i, max_length) for i in sep_y]
         # print(sep_y[0].shape)
         # print(sep_y[1].shape)
         sep_y = torch.cat(sep_y, dim=0)
@@ -185,7 +187,7 @@ def main():
     y_tr = torch.stack(y_tr_list)
 
     dataset = TensorDataset(x_tr, y_tr)
-    train_loader = DataLoader(dataset, batch_size=2, shuffle=True)
+    train_loader = DataLoader(dataset, batch_size=1, shuffle=True)
 
     model = TasNet().to(device)
     optimizer = optim.Adam(model.parameters(), lr=0.001)
@@ -193,7 +195,6 @@ def main():
     train_conv_tasnet(model, train_loader, optimizer, num_epochs=10)
 
     torch.save(model.state_dict(), "tasnet_model.pth")
-
 
     wf1, sr1 = load_wav_to_tensor('audios/male-male-mixture.wav')
     wf2, sr2 = load_wav_to_tensor('audios/male-male-dpcl1.wav')
@@ -203,10 +204,10 @@ def main():
     # print(wf2.shape)
     # print(wf3.shape)
     
-    max_length = max(wf1.shape[1], wf2.shape[1], wf3.shape[1])
-    wf1 = pad_waveform(wf1, max_length)
-    wf2 = pad_waveform(wf2, max_length)
-    wf3 = pad_waveform(wf3, max_length)
+    # max_length = max(wf1.shape[1], wf2.shape[1], wf3.shape[1])
+    wf1 = adjust_length(wf1, max_length)
+    wf2 = adjust_length(wf2, max_length)
+    wf3 = adjust_length(wf3, max_length)
 
     x_ts_list = [wf1]
     y_ts_list = [torch.cat((wf2, wf3), dim=0)]

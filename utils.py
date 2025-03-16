@@ -15,11 +15,14 @@ def save_tensor_to_wav(tensor, file_path, sample_rate):
     tensor = tensor.squeeze(0).numpy()
     sf.write(file_path, tensor, sample_rate)
 
-def pad_waveform(waveform, target_length):
+def adjust_length(waveform, target_length):
     current_length = waveform.shape[1]
     if current_length < target_length:
         padding = target_length - current_length
         waveform = F.pad(waveform, (0, padding), "constant", 0)
+    elif current_length > target_length:
+        waveform = waveform[:, :target_length]
+
     return waveform
 
 def set_seed(seed):
@@ -49,7 +52,7 @@ def calculate_mse(audio_file1, audio_file2):
     y1, sr1 = librosa.load(audio_file1, sr=None)
     y2, sr2 = librosa.load(audio_file2, sr=None)
 
-    print(type(y1))
+    # print(type(y1))
 
     if sr1 != sr2:
         y2 = librosa.resample(y2, orig_sr=sr2, target_sr=sr1)
